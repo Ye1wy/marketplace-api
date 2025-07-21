@@ -1,6 +1,7 @@
 package database
 
 import (
+	apie "auth-service/internal/errors"
 	"context"
 	"fmt"
 	"time"
@@ -19,7 +20,7 @@ type PostgresConfig struct {
 }
 
 func NewPostgresStorage(cfg *PostgresConfig) (*pgxpool.Pool, error) {
-	ctx, cancel := context.WithTimeoutCause(context.Background(), cfg.ConnectTimeout, ErrConnectTimeout)
+	ctx, cancel := context.WithTimeoutCause(context.Background(), cfg.ConnectTimeout, apie.ErrConnectTimeout)
 	defer cancel()
 
 	connect := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?pool_max_conns=%s", cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresDatabase, cfg.MaxConn)

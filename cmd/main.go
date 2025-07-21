@@ -25,7 +25,15 @@ func main() {
 	diller := mailer.NewMockMailer()
 	scv := service.NewAuthService(tokenRepo, tokenRepo, userRepo, userRepo, diller, log, cfg.Secret)
 	auth := controller.NewAuth(scv, log)
-	router := route.NewRouter(auth)
+	adsRepo := repository.NewAdsRepo(conn, log)
+	adsServ := service.NewAdsService(adsRepo, adsRepo, userRepo, log)
+	ads := controller.NewAds(adsServ, log)
+	routeCfg := route.ControllersConfig{
+		Auth: auth,
+		Ads:  ads,
+	}
+
+	router := route.NewRouter(routeCfg)
 
 	if err := router.Run(":" + cfg.Port); err != nil {
 		log.Error("Somthing went wrong with run service", logger.Err(err), "op", "main")

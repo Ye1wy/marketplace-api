@@ -1,6 +1,7 @@
 package repository
 
 import (
+	apie "auth-service/internal/errors"
 	"auth-service/internal/model/domain"
 	"auth-service/pkg/logger"
 	"context"
@@ -50,7 +51,7 @@ func (r *userRepo) GetByUsername(ctx context.Context, username string) (*domain.
 	err := row.Scan(&user.Id, &user.Username, &user.Password, &user.Email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		r.logger.Debug("User not found", "op", op)
-		return nil, ErrUserNotFound
+		return nil, apie.ErrUserNotFound
 	}
 
 	if err != nil {
@@ -71,7 +72,7 @@ func (r *userRepo) GetById(ctx context.Context, id uuid.UUID) (*domain.User, err
 	err := row.Scan(&user.Id, &user.Username, &user.Password, &user.Email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		r.logger.Debug("User not found", "op", op)
-		return nil, ErrUserNotFound
+		return nil, apie.ErrUserNotFound
 	}
 
 	if err != nil {

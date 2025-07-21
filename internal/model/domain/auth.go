@@ -3,7 +3,7 @@ package domain
 import "github.com/google/uuid"
 
 type AccessTokenPayload struct {
-	Username  string
+	UserID    uuid.UUID
 	Ip        string
 	SessionId uuid.UUID
 }

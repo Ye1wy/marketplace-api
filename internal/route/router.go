@@ -11,18 +11,34 @@ type router struct {
 	router *gin.Engine
 }
 
-func NewRouter(auth *controller.AuthController) *router {
+type ControllersConfig struct {
+	Auth *controller.AuthController
+	Ads  *controller.AdsController
+}
+
+func NewRouter(cfg ControllersConfig) *router {
 	r := router{
 		router: gin.Default(),
 	}
 
-	authGroup := r.router.Group("/api/v1")
+	authPrivate := r.router.Group("/api")
+	authPrivate.Use(cfg.Auth.ValidateToken)
 	{
-		authGroup.POST("/signup", auth.SignUp)
-		authGroup.POST("/login", auth.Login)
-		authGroup.POST("/logout", auth.Logout)
-		authGroup.POST("/token/refresh", auth.Refresh)
-		authGroup.POST("/secret/:id", auth.TakeTokens)
+		authPrivate.POST("/logout", cfg.Auth.Logout)
+		authPrivate.POST("/token/refresh", cfg.Auth.Refresh)
+		authPrivate.POST("/secret/:id", cfg.Auth.TakeTokens)
+	}
+
+	authPublic := r.router.Group("/api")
+	{
+		authPublic.POST("/signup", cfg.Auth.SignUp)
+		authPublic.POST("/login", cfg.Auth.Login)
+	}
+
+	ads := r.router.Group("/api/ads")
+	{
+		ads.GET("/", cfg.Auth.ValidateTokenOptional, cfg.Ads.GetAll)
+		ads.POST("/create", cfg.Auth.ValidateToken, cfg.Ads.Create)
 	}
 
 	r.router.GET("/ping", func(c *gin.Context) {

@@ -1,12 +1,14 @@
 package service
 
 import (
+	apie "auth-service/internal/errors"
 	mailer "auth-service/internal/mail"
 	"auth-service/internal/model/domain"
 	"auth-service/pkg/logger"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -22,6 +24,7 @@ type TokenWrite interface {
 }
 
 type TokenRead interface {
+	GetById(ctx context.Context, id uuid.UUID) (*domain.RefreshToken, error)
 	GetByUsername(ctx context.Context, username string) ([]domain.RefreshToken, error)
 }
 
@@ -61,19 +64,19 @@ func (s *authService) SignUp(ctx context.Context, user domain.User) error {
 
 	if user.Username == "" || user.Password == "" || user.Email == "" {
 		s.logger.Debug("domain user is empty", "op", op)
-		return ErrNoContent
+		return fmt.Errorf("%s: %w", op, apie.ErrNoContent)
 	}
 
-	cryptPassword, err := s.hashPassword(user.Password)
+	cryptPassword, err := hashPassword(user.Password)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %v", op, err)
 	}
 
 	user.Password = cryptPassword
 
 	if err := s.userWriter.Create(ctx, user); err != nil {
 		s.logger.Debug("Creating error", logger.Err(err), "op", op)
-		return err
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	return nil
@@ -84,31 +87,34 @@ func (s *authService) Login(ctx context.Context, user domain.User) (*domain.Toke
 
 	check, err := s.userReader.GetByUsername(ctx, user.Username)
 	if err != nil {
+		s.logger.Error("Failed get username", logger.Err(err), "op", op)
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	s.logger.Debug("data from user repo", "username", check.Username, "password", check.Password, "op", op)
+	s.logger.Debug("data from user repo", "userId", check.Username, "password", check.Password, "op", op)
 
 	if user.Username != check.Username {
-		return nil, ErrIncorrectUsernameOrPassword
+		s.logger.Warn("Username is incorrct", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrIncorrectUsernameOrPassword)
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(check.Password), []byte(user.Password))
 	if err != nil {
-		return nil, ErrIncorrectUsernameOrPassword
+		s.logger.Error("Compare hash is failed", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrIncorrectUsernameOrPassword)
 	}
 
 	sessionId := uuid.New()
 	accessPayload := domain.AccessTokenPayload{
-		Username:  user.Username,
+		UserID:    check.Id,
 		Ip:        user.Ip,
 		SessionId: sessionId,
 	}
 
-	access, err := s.genereateAccessToken(accessPayload)
+	access, err := genereateAccessToken(accessPayload, s.secretKey)
 	if err != nil {
 		s.logger.Warn("Access token not signed", logger.Err(err), "op", op)
-		return nil, err
+		return nil, fmt.Errorf("%s: %v", op, err)
 	}
 
 	refreshPayload := domain.RefreshTokenPayload{
@@ -116,10 +122,10 @@ func (s *authService) Login(ctx context.Context, user domain.User) (*domain.Toke
 		SessionId: sessionId,
 	}
 
-	refresh, err := s.generateRefreshToken(refreshPayload)
+	refresh, err := generateRefreshToken(refreshPayload)
 	if err != nil {
 		s.logger.Warn("Error on generate refresh token", logger.Err(err), "op", op)
-		return nil, err
+		return nil, fmt.Errorf("%s: %v", op, err)
 	}
 
 	tokens := domain.Token{
@@ -127,11 +133,11 @@ func (s *authService) Login(ctx context.Context, user domain.User) (*domain.Toke
 		Refresh: refresh.Refresh,
 	}
 
-	s.logger.Debug("params", "check user", check.Username, "username", user.Username, "a", access, "r", refresh)
+	s.logger.Debug("params", "check user", check.Username, "userId", user.Username, "a", access, "r", refresh)
 	s.logger.Debug("param session", "id", sessionId)
 	if err := s.tokenWriter.PinRefreshToken(ctx, *refresh); err != nil {
 		s.logger.Error("Pin refresh token problem", logger.Err(err), "op", op)
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return &tokens, nil
@@ -139,17 +145,34 @@ func (s *authService) Login(ctx context.Context, user domain.User) (*domain.Toke
 
 func (s *authService) Logout(ctx context.Context, token domain.Token) error {
 	op := "service.authService.Logout"
-	jwtMap, ok := s.getFromToken(token.Access)
+	jwtMap, ok := getFromToken(token.Access, s.secretKey)
 	if !ok {
-		return ErrInvalidToken
+		s.logger.Warn("Invalid token", "op", op)
+		return fmt.Errorf("%s: %w", op, apie.ErrInvalidToken)
 	}
 
-	username := jwtMap["username"].(string)
+	rawUserId, ok := jwtMap["userId"].(string)
+	if !ok {
+		s.logger.Error("Username not contained in jwt map", "op", op)
+		return fmt.Errorf("%s: %w", op, apie.ErrConversationProblem)
+	}
 
-	dbToken, err := s.tokenReader.GetByUsername(ctx, username)
+	userId, err := uuid.Parse(rawUserId)
 	if err != nil {
-		s.logger.Debug("Failed to get refresh token from database", logger.Err(err), "op", op)
-		return err
+		s.logger.Error("Parse string uuid is failed", logger.Err(err), "op", op)
+		return fmt.Errorf("%s: %v", op, err)
+	}
+
+	check, err := s.userReader.GetById(ctx, userId)
+	if err != nil {
+		s.logger.Error("Failed get user by id", logger.Err(err), "op", op)
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	dbToken, err := s.tokenReader.GetByUsername(ctx, check.Username)
+	if err != nil {
+		s.logger.Error("Failed to get refresh token from database", logger.Err(err), "op", op)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
 	var target domain.RefreshToken
@@ -164,13 +187,13 @@ func (s *authService) Logout(ctx context.Context, token domain.Token) error {
 	}
 
 	if !found {
-		s.logger.Debug("hash not found", "op", op)
-		return ErrNoContent
+		s.logger.Warn("hash not found", "op", op)
+		return fmt.Errorf("%s: %w", op, apie.ErrNoContent)
 	}
 
 	if err := s.tokenWriter.Delete(ctx, target); err != nil {
-		s.logger.Debug("Failed delete refresh token from database", logger.Err(err), "op", op)
-		return err
+		s.logger.Error("Failed delete refresh token from database", logger.Err(err), "op", op)
+		return fmt.Errorf("%s: %v", op, err)
 	}
 
 	return nil
@@ -178,24 +201,35 @@ func (s *authService) Logout(ctx context.Context, token domain.Token) error {
 
 func (s *authService) Refresh(ctx context.Context, token domain.Token) (*domain.Token, error) {
 	op := "service.authService.Refresh"
-	jwtMap, ok := s.getFromToken(token.Access)
+	jwtMap, ok := getFromToken(token.Access, s.secretKey)
 	if !ok {
 		s.logger.Error("Failed to get target username from JWT token payload", "op", op)
-		return nil, ErrInvalidToken
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrInvalidToken)
 	}
 
-	username, ok := jwtMap["username"].(string)
+	rawUserId, ok := jwtMap["userId"].(string)
 	if !ok {
-		s.logger.Error("Conversation problem: username is not contains in jwt map", "op", op)
-		return nil, ErrConversationProblem
+		s.logger.Error("Username not contained in jwt map", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrConversationProblem)
 	}
 
-	s.logger.Debug("Check username", "username", username, "op", op)
+	userId, err := uuid.Parse(rawUserId)
+	if err != nil {
+		s.logger.Error("Parse string uuid is failed", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %v", op, err)
+	}
 
-	dbToken, err := s.tokenReader.GetByUsername(ctx, username)
+	check, err := s.userReader.GetById(ctx, userId)
+	if err != nil {
+		s.logger.Error("Failed get user by id", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	s.logger.Debug("Check username", "userId", userId, "op", op)
+
+	dbToken, err := s.tokenReader.GetByUsername(ctx, check.Username)
 	if err != nil {
 		s.logger.Error("Failed to get refresh token from database", logger.Err(err), "op", op)
-		return nil, err
+		return nil, fmt.Errorf("%s: %v", op, err)
 	}
 
 	var target domain.RefreshToken
@@ -210,19 +244,20 @@ func (s *authService) Refresh(ctx context.Context, token domain.Token) (*domain.
 	}
 
 	if !found {
-		s.logger.Debug("hash not found", "op", op)
-		return nil, ErrNoContent
+		s.logger.Warn("hash not found", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrNoContent)
 	}
 
 	diff := time.Now().Compare(target.ExpiresAt)
 	if diff > 0 {
-		return nil, ErrRefreshIsExpired
+		s.logger.Debug("Refresh token is expired", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrRefreshIsExpired)
 	}
 
 	ip, ok := jwtMap["ip"].(string)
 	if !ok {
 		s.logger.Error("Conversation problem: ip is not contains in jwt map", "op", op)
-		return nil, ErrConversationProblem
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrConversationProblem)
 	}
 
 	s.logger.Debug("Check ip", "ip", ip, "op", op)
@@ -231,38 +266,85 @@ func (s *authService) Refresh(ctx context.Context, token domain.Token) (*domain.
 		user, err := s.userReader.GetById(ctx, target.UserId)
 		if err != nil {
 			s.logger.Debug("Not found or something wrong", logger.Err(err), "op", op)
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", op, err)
 		}
 
 		s.logger.Debug("Ip not same", "op", op)
 		if err := s.tokenWriter.Delete(ctx, target); err != nil {
 			s.logger.Error("delete wronge", logger.Err(err), "op", op)
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", op, err)
 		}
 
 		if err := s.diller.SendMail(user.Email, "Warning", "Your ip is change"); err != nil {
 			s.logger.Error("send wrong", logger.Err(err), "op", op)
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", op, err)
 		}
 
-		return nil, ErrNewIp
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrNewIp)
 	}
 
-	data := domain.AccessTokenPayload{
-		Username:  username,
-		Ip:        token.Ip,
-		SessionId: uuid.New(),
+	rawSessionId, ok := jwtMap["sessionId"].(string)
+	if !ok {
+		s.logger.Error("Session id is not contained in jwt map", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrConversationProblem)
 	}
 
-	access, err := s.genereateAccessToken(data)
+	oldSessionId, err := uuid.Parse(rawSessionId)
 	if err != nil {
-		return nil, err
+		s.logger.Error("Failed to parse session uuid from string", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %v", op, err)
+	}
+
+	refreshTokenData, err := s.tokenReader.GetById(ctx, oldSessionId)
+	if err != nil {
+		s.logger.Error("Get session data is failed", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	if oldSessionId != refreshTokenData.SessionId {
+		s.logger.Warn("Taked token is invalid", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrInvalidToken)
+	}
+
+	newSessionId := uuid.New()
+
+	accessPayload := domain.AccessTokenPayload{
+		UserID:    userId,
+		Ip:        token.Ip,
+		SessionId: newSessionId,
+	}
+
+	access, err := genereateAccessToken(accessPayload, s.secretKey)
+	if err != nil {
+		s.logger.Error("Access generation problem", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %v", op, err)
+	}
+
+	refreshPayload := domain.RefreshTokenPayload{
+		UserId:    target.UserId,
+		SessionId: newSessionId,
+	}
+
+	newRefresh, err := generateRefreshToken(refreshPayload)
+	if err != nil {
+		s.logger.Error("Refresh generation problem", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %v", op, err)
 	}
 
 	res := domain.Token{
 		Ip:      token.Ip,
 		Access:  access,
-		Refresh: token.Refresh,
+		Refresh: newRefresh.Refresh,
+	}
+
+	if err := s.tokenWriter.Delete(ctx, target); err != nil {
+		s.logger.Error("Failed to delete old refresh token", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	if err := s.tokenWriter.PinRefreshToken(ctx, *newRefresh); err != nil {
+		s.logger.Error("Failed to pin new refresh token", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return &res, nil
@@ -273,20 +355,20 @@ func (s *authService) Secret(ctx context.Context, id uuid.UUID, ip string) (*dom
 	user, err := s.userReader.GetById(ctx, id)
 	if err != nil {
 		s.logger.Warn("Can't get user by id", logger.Err(err), "op", op)
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	sessionId := uuid.New()
 	accessPayload := domain.AccessTokenPayload{
-		Username:  user.Username,
+		UserID:    user.Id,
 		Ip:        ip,
 		SessionId: sessionId,
 	}
 
-	access, err := s.genereateAccessToken(accessPayload)
+	access, err := genereateAccessToken(accessPayload, s.secretKey)
 	if err != nil {
 		s.logger.Error("access token not signed", logger.Err(err), "op", op)
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	refreshPayload := domain.RefreshTokenPayload{
@@ -294,10 +376,10 @@ func (s *authService) Secret(ctx context.Context, id uuid.UUID, ip string) (*dom
 		SessionId: sessionId,
 	}
 
-	refresh, err := s.generateRefreshToken(refreshPayload)
+	refresh, err := generateRefreshToken(refreshPayload)
 	if err != nil {
 		s.logger.Error("Error on generate refresh token", logger.Err(err), "op", op)
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	tokens := domain.Token{
@@ -305,30 +387,30 @@ func (s *authService) Secret(ctx context.Context, id uuid.UUID, ip string) (*dom
 		Refresh: refresh.Refresh,
 	}
 
-	s.logger.Debug("params", "username", user.Username, "a", access, "r", refresh)
+	s.logger.Debug("params", "userId", user.Username, "a", access, "r", refresh)
 
 	if err := s.tokenWriter.PinRefreshToken(ctx, *refresh); err != nil {
 		s.logger.Debug("Repository error", logger.Err(err), "op", op)
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return &tokens, nil
 }
 
-func (s *authService) hashPassword(password string) (string, error) {
+func hashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(hash), err
 }
 
-func (s *authService) genereateAccessToken(payload domain.AccessTokenPayload) (string, error) {
+func genereateAccessToken(payload domain.AccessTokenPayload, secret string) (string, error) {
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sessionId": payload.SessionId,
-		"username":  payload.Username,
+		"userId":    payload.UserID,
 		"ip":        payload.Ip,
 		"exp":       time.Now().Add(time.Minute * 15).Unix(),
 	})
 
-	accessTokenString, err := accessToken.SignedString([]byte(s.secretKey))
+	accessTokenString, err := accessToken.SignedString([]byte(secret))
 	if err != nil {
 		return "", err
 	}
@@ -336,7 +418,7 @@ func (s *authService) genereateAccessToken(payload domain.AccessTokenPayload) (s
 	return accessTokenString, nil
 }
 
-func (s *authService) generateRefreshToken(payload domain.RefreshTokenPayload) (*domain.RefreshToken, error) {
+func generateRefreshToken(payload domain.RefreshTokenPayload) (*domain.RefreshToken, error) {
 	token := make([]byte, 32)
 	_, err := rand.Read(token)
 	if err != nil {
@@ -362,17 +444,16 @@ func (s *authService) generateRefreshToken(payload domain.RefreshTokenPayload) (
 	return &res, nil
 }
 
-func (s *authService) getFromToken(tokenStr string) (jwt.MapClaims, bool) {
-	secret := []byte(s.secretKey)
+func getFromToken(tokenStr, secret string) (jwt.MapClaims, bool) {
+	key := []byte(secret)
 	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, http.ErrAbortHandler
 		}
-		return secret, nil
+		return key, nil
 	})
 
 	if err != nil {
-		s.logger.Error("error in get from token", logger.Err(err))
 		return nil, false
 	}
 
@@ -380,6 +461,78 @@ func (s *authService) getFromToken(tokenStr string) (jwt.MapClaims, bool) {
 		return claims, true
 	}
 
-	s.logger.Warn("Invalid JWT token")
 	return nil, false
+}
+
+// Middewarre for a preliminary check
+func (s *authService) ValidateToken(ctx context.Context, accessToken string) (*domain.AccessTokenPayload, error) {
+	op := "service.authService.ValidateToken"
+	jwtMap, ok := getFromToken(accessToken, s.secretKey)
+	if !ok {
+		s.logger.Error("Failed get jwt map", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrInvalidToken)
+	}
+
+	rawUserId, ok := jwtMap["userId"].(string)
+	if !ok {
+		s.logger.Error("Conversation problem: username is not contained", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrInvalidToken)
+	}
+
+	userId, err := uuid.Parse(rawUserId)
+	if err != nil {
+		s.logger.Error("Parse user id is failed", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %v", op, err)
+	}
+
+	user, err := s.userReader.GetById(ctx, userId)
+	if err != nil {
+		s.logger.Error("UserId is not found", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrInvalidToken)
+	}
+
+	expFloat, ok := jwtMap["exp"].(float64)
+	if !ok {
+		s.logger.Error("Conversation problem: expier time is not contained", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrConversationProblem)
+	}
+
+	exp := time.Unix(int64(expFloat), 0)
+
+	diff := time.Now().Compare(exp)
+
+	if diff >= 0 {
+		s.logger.Warn("Access token is expired", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrAccessIsExpired)
+	}
+
+	rawSessionId, ok := jwtMap["sessionId"].(string)
+	if !ok {
+		s.logger.Error("Conversation problem: session id is not contained", "op", op)
+		return nil, fmt.Errorf("%s: %w", op, apie.ErrInvalidToken)
+	}
+
+	sessionId, err := uuid.Parse(rawSessionId)
+	if err != nil {
+		s.logger.Error("Failed parse string with uuid", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s: %v", op, err)
+	}
+
+	_, err = s.tokenReader.GetById(ctx, sessionId)
+	if err != nil {
+		if errors.Is(err, apie.ErrSessionNotFound) {
+			s.logger.Error("Session id is not contained in jwt map", "op", op)
+			return nil, fmt.Errorf("%s: %w", op, apie.ErrInvalidToken)
+		}
+
+		s.logger.Error("Failed to get session by id", logger.Err(err), "op", op)
+		return nil, fmt.Errorf("%s, %v", op, err)
+	}
+
+	payload := domain.AccessTokenPayload{
+		UserID:    user.Id,
+		SessionId: sessionId,
+	}
+
+	return &payload, nil
 }
