@@ -1,0 +1,43 @@
+services:
+  postgres-db:
+    image: postgres:latest
+    container_name: postgres-auth-db
+    env_file:
+      - ../.env
+    volumes:
+      - store_data:/var/lib/postgresql/data
+      - ../db/init_tables.sql:/docker-entrypoint-initdb.d/init_table.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    ports:
+     - "5432:5432"
+    restart: always
+    networks:
+      - auth-service-networks
+  
+  auth-service:
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
+    container_name: auth-service
+    environment:
+      - CONFIG_PATH=/service/.env
+    env_file:
+      - ../.env
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    restart: always
+    networks:
+      - auth-service-networks
+      
+volumes:
+  store_data:
+networks:
+  auth-service-networks:
+    driver: bridge
