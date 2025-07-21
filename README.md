@@ -2,6 +2,39 @@
 
 REST API для маркетплейса с авторизацией, JWT, лентой объявлений и фильтрацией.
 
+
+## 🚀 Запуск
+
+- Добавь путь `.env` файла (`marketplace-api/.env`)
+
+#### Пример:
+```env
+env=local
+secret_word="exampleword"
+
+server:
+  address: "localhost"
+  port: "80"
+
+POSTGRES_HOST=postgres-db
+POSTGRES_PORT=5432
+POSTGRES_USER=root
+POSTGRES_PASSWORD=root
+POSTGRES_DB=auth_db
+postgres_db_pool_max_conns=20
+
+sender_host="smtp.example.com"
+sender_email="example@mail.com"
+sender_password="password"
+sender_port=587
+```
+
+#### Сам запуск производится из корня проекта:
+
+```bash
+docker compose -f marketplace-api/deployments/docker-compose up -d --build
+```
+
 ---
 
 ## 📦 Функциональность
