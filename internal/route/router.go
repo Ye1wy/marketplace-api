@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 type router struct {
@@ -20,6 +22,8 @@ func NewRouter(cfg ControllersConfig) *router {
 	r := router{
 		router: gin.Default(),
 	}
+
+	r.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	authPrivate := r.router.Group("/api")
 	authPrivate.Use(cfg.Auth.ValidateToken)

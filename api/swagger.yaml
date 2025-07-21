@@ -1,0 +1,274 @@
+basePath: /api
+definitions:
+  dto.AdsResponse:
+    properties:
+      author_name:
+        type: string
+      created_at:
+        type: string
+      descripstion:
+        type: string
+      image_url:
+        type: string
+      is_mine:
+        type: boolean
+      price:
+        type: number
+      title:
+        type: string
+    type: object
+  dto.Massage:
+    properties:
+      massage:
+        type: string
+      value:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: This is a sample server marketplace server.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Swagger marketplace API
+  version: "1.0"
+paths:
+  /api/ads:
+    get:
+      consumes:
+      - application/json
+      description: That endpoint retrieve all registered ads in system
+      parameters:
+      - description: page get data
+        in: query
+        name: page
+        type: integer
+      - description: pageSize get data
+        in: query
+        name: pageSize
+        type: integer
+      - description: sort get data
+        in: query
+        name: sort
+        type: string
+      - description: order get data
+        in: query
+        name: order
+        type: string
+      - description: min price get data
+        in: query
+        name: minPrice
+        type: integer
+      - description: max price get data
+        in: query
+        name: maxPrice
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.AdsResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Massage'
+      summary: Get all ads
+      tags:
+      - ads
+  /api/ads/create:
+    post:
+      consumes:
+      - application/json
+      description: That methods create new ads in system if you authorized
+      parameters:
+      - description: ads title
+        in: path
+        name: title
+        required: true
+        type: string
+      - description: ads description
+        in: path
+        name: description
+        required: true
+        type: string
+      - description: ads price
+        in: path
+        name: price
+        required: true
+        type: integer
+      - description: ads image url
+        in: path
+        name: image_url
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Massage'
+      summary: Create new ads
+      tags:
+      - ads
+  /api/login:
+    post:
+      consumes:
+      - application/json
+      description: This endpoint provides access to parts of the system
+      parameters:
+      - description: your username
+        in: query
+        name: username
+        required: true
+        type: string
+      - description: your password
+        in: query
+        name: password
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Massage'
+      summary: login into system
+      tags:
+      - auth
+  /api/logout:
+    post:
+      consumes:
+      - application/json
+      description: this endpoint prevents access to parts of the system under your
+        session
+      parameters:
+      - description: access token
+        in: header
+        name: access_token
+        required: true
+        type: string
+      - description: refresh token
+        in: header
+        name: refresh_token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "205":
+          description: Reset Content
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Massage'
+      summary: logout from system
+      tags:
+      - auth
+  /api/refresh:
+    post:
+      consumes:
+      - application/json
+      description: This endpoint extends access to the system
+      parameters:
+      - description: access token
+        in: header
+        name: access_token
+        required: true
+        type: string
+      - description: refresh token
+        in: header
+        name: refresh_token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Massage'
+      summary: Refresh access token
+      tags:
+      - auth
+  /api/signup:
+    post:
+      consumes:
+      - application/json
+      description: This endpoint logs you into the system
+      parameters:
+      - description: your username
+        in: query
+        name: username
+        required: true
+        type: string
+      - description: your password
+        in: query
+        name: password
+        required: true
+        type: string
+      - description: your email
+        in: query
+        name: email
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/dto.Massage'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/dto.Massage'
+      summary: Sign up
+      tags:
+      - auth
+swagger: "2.0"

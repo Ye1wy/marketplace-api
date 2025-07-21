@@ -31,6 +31,21 @@ func NewAds(service AdsService, logger *logger.Logger) *AdsController {
 	}
 }
 
+// CreateAds godoc
+//
+//	@Summary		Create new ads
+//	@Description	That methods create new ads in system if you authorized
+//	@Tags			ads
+//	@Accept			json
+//	@Produce		json
+//	@Param			title		path	string	true	"ads title"
+//	@Param			description	path	string	true	"ads description"
+//	@Param			price		path	int		true	"ads price"
+//	@Param			image_url	path	string	true	"ads image url"
+//	@Success		201
+//	@Failure		400	{object} dto.Massage
+//	@Failure		500	{object} dto.Massage
+//	@Router			/api/ads/create [post]
 func (ctrl *AdsController) Create(c *gin.Context) {
 	op := "controller.ads.Create"
 
@@ -69,6 +84,23 @@ func (ctrl *AdsController) Create(c *gin.Context) {
 	ctrl.responce(c, http.StatusCreated, input)
 }
 
+// GetAllAds godoc
+//
+//	@Summary		Get all ads
+//	@Description	That endpoint retrieve all registered ads in system
+//	@Tags			ads
+//	@Accept			json
+//	@Produce		json
+//	@Param			page		query		int		false	"page get data"
+//	@Param			pageSize	query		int		false	"pageSize get data"
+//	@Param			sort		query		string	false	"sort get data"
+//	@Param			order		query		string	false	"order get data"
+//	@Param			minPrice	query		int		false	"min price get data"
+//	@Param			maxPrice	query		int		false	"max price get data"
+//	@Success		200			{array}		dto.AdsResponse
+//	@Failure		400			{object}	dto.Massage
+//	@Failure		500			{object}	dto.Massage
+//	@Router			/api/ads [get]
 func (ctrl *AdsController) GetAll(c *gin.Context) {
 	op := "controller.ads.GetAll"
 	var filter domain.Filters

@@ -29,7 +29,7 @@ type AuthController struct {
 	service AuthService
 }
 
-func NewAuth(service AuthService /* secretKey string*/, logger *logger.Logger) *AuthController {
+func NewAuth(service AuthService, logger *logger.Logger) *AuthController {
 	ctrl := NewBaseController(logger)
 	return &AuthController{
 		ctrl,
@@ -37,6 +37,20 @@ func NewAuth(service AuthService /* secretKey string*/, logger *logger.Logger) *
 	}
 }
 
+// SignUp godoc
+//
+//	@Summary		Sign up
+//	@Description	This endpoint logs you into the system
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			username	query	string	true	"your username"
+//	@Param			password	query	string	true	"your password"
+//	@Param			email		query	string	true	"your email"
+//	@Success		201
+//	@Failure		400	{object}	dto.Massage
+//	@Failure		500	{object}	dto.Massage
+//	@Router			/api/signup [post]
 func (ctrl *AuthController) SignUp(c *gin.Context) {
 	op := "controller.auth.Register"
 	var inputUser dto.Register
@@ -63,9 +77,22 @@ func (ctrl *AuthController) SignUp(c *gin.Context) {
 	}
 
 	c.Status(http.StatusCreated)
-	c.Redirect(http.StatusMovedPermanently, "/login")
 }
 
+// Login godoc
+//
+//	@Summary		login into system
+//	@Description	This endpoint provides access to parts of the system
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			username	query		string	true	"your username"
+//	@Param			password	query		string	true	"your password"
+//	@Success		200			{object}	dto.Massage
+//	@Failure		400			{object}	dto.Massage
+//	@Failure		401			{object}	dto.Massage
+//	@Failure		500			{object}	dto.Massage
+//	@Router			/api/login [post]
 func (ctrl *AuthController) Login(c *gin.Context) {
 	op := "controller.auth.Login"
 	var inputData dto.LoginRequest
@@ -106,6 +133,20 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 	ctrl.responce(c, http.StatusOK, gin.H{"massage": hello})
 }
 
+// Logout godoc
+//
+//	@Summary		logout from system
+//	@Description	this endpoint prevents access to parts of the system under your session
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			access_token	header		string	true	"access token"
+//	@Param			refresh_token	header		string	true	"refresh token"
+//	@Success		205				{object}	dto.Massage
+//	@Failure		400				{object}	dto.Massage
+//	@Failure		401				{object}	dto.Massage
+//	@Failure		500				{object}	dto.Massage
+//	@Router			/api/logout [post]
 func (ctrl *AuthController) Logout(c *gin.Context) {
 	op := "controller.auth.Logout"
 
@@ -132,6 +173,19 @@ func (ctrl *AuthController) Logout(c *gin.Context) {
 	ctrl.responce(c, http.StatusResetContent, gin.H{"massage": "You're login out"})
 }
 
+// Refresh godoc
+//
+//	@Summary		Refresh access token
+//	@Description	This endpoint extends access to the system
+//	@Tags			auth
+//	@Accept			json
+//	@Produce		json
+//	@Param			access_token	header	string	true	"access token"
+//	@Param			refresh_token	header	string	true	"refresh token"
+//	@Success		200
+//	@Failure		401	{object}	dto.Massage
+//	@Failure		500	{object}	dto.Massage
+//	@Router			/api/refresh [post]
 func (ctrl *AuthController) Refresh(c *gin.Context) {
 	op := "controller.auth.Refresh"
 
@@ -225,20 +279,3 @@ func (ctrl *AuthController) ValidateTokenOptional(c *gin.Context) {
 	c.Set("userId", payload.UserID)
 	c.Next()
 }
-
-// func (ctrl *AuthController) AuthentificateMiddleware(c *gin.Context) gin.HandlerFunc {
-// 	return func(c *gin.Context) {
-// 		tokenStr := c.Request.Header.Get("access_token")
-// 		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-// 			return ctrl.secretKey, nil
-// 		})
-
-// 		if err != nil || !token.Valid {
-// 			ctrl.responce(c, http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-// 			c.Abort()
-// 			return
-// 		}
-
-// 		c.Next()
-// 	}
-// }

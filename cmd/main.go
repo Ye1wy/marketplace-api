@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "auth-service/api"
 	"auth-service/internal/controller"
 	"auth-service/internal/database"
 	mailer "auth-service/internal/mail"
@@ -12,6 +13,14 @@ import (
 	"os"
 )
 
+//	@title			Swagger marketplace API
+//	@version		1.0
+//	@description	This is a sample server marketplace server.
+
+//	@license.name	Apache 2.0
+//	@license.url	http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @BasePath	/api
 func main() {
 	cfg := config.MustLoad()
 	log := logger.NewLogger(cfg.Env)
