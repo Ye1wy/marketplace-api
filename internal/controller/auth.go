@@ -63,6 +63,18 @@ func (ctrl *AuthController) SignUp(c *gin.Context) {
 
 	user := mapper.RegisterToDomain(inputUser)
 
+	if len(user.Username) < 3 {
+		ctrl.logger.Warn("username is too short", "op", op)
+		ctrl.responce(c, http.StatusBadRequest, gin.H{"error": "username must be at least 3 characters"})
+		return
+	}
+
+	if len(user.Password) < 6 {
+		ctrl.logger.Warn("password is too short", "op", op)
+		ctrl.responce(c, http.StatusBadRequest, gin.H{"error": "password must be at least 6 characters"})
+		return
+	}
+
 	err := ctrl.service.SignUp(c.Request.Context(), user)
 	if errors.Is(err, apie.ErrNoContent) {
 		ctrl.logger.Error("No content in all or one+ field input data", "data", user, "op", op)
